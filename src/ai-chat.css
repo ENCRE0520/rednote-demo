@@ -1,0 +1,496 @@
+/* ============================================================
+   「点点」AI 对话页
+   尺寸全部按设计稿（402 × 874）标注：状态栏 62 + 头部 56，
+   正文从 y=130 起，左右 16，气泡/建议宽度上限 331；
+   输入条 48 + 间距 10 + 说明 16 + 下留白 16 = 底部 90。
+   ============================================================ */
+
+.ai-chat-page {
+  position: absolute;
+  inset: 0;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f5f5f5;
+  will-change: opacity, transform;
+}
+
+/* 容器接住初始焦点，但不画聚焦框（键盘 Tab 仍能正常走到各按钮） */
+.ai-chat-page:focus {
+  outline: none;
+}
+
+/* 状态栏内容由全局 StatusBar（z50）绘制，这里只占高度 */
+.ai-chat-status-space {
+  height: 62px;
+  flex-shrink: 0;
+}
+
+/* ---------- 头部：关闭 / 头像+名称 / 更多 ---------- */
+
+.ai-chat-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.ai-chat-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ai-chat-icon-btn img {
+  width: 100%;
+  height: 100%;
+}
+
+/* 头像与名称绝对居中于整屏，不随左右图标宽度漂移 */
+.ai-chat-title {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+/* 点点图标：设计稿 28×28（圆角方块 + 左下直角的水滴形，竖向渐变） */
+.ai-chat-avatar {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.ai-chat-name {
+  font-size: 16px;
+  line-height: 1;
+  color: #000;
+}
+
+/* ---------- 消息区 ---------- */
+
+.ai-chat-page .ai-chat-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: #f5f5f5;
+  padding: 12px 16px 20px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: none;
+}
+
+.ai-chat-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.ai-chat-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* AI 气泡：白底、18 圆角、12 内距，16/1.6；宽度上限 370（左右各留 16） */
+.ai-chat-bubble {
+  max-width: 370px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 18px;
+  background: #fff;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #000;
+  word-break: break-word;
+  /* 出现时从靠近说话人的一角轻轻放大 */
+  transform-origin: 0 100%;
+}
+
+/* 开场白按设计稿收窄到 324 */
+.ai-chat-bubble.is-greeting {
+  max-width: 324px;
+}
+
+/* 带操作的回答铺满可用宽度（370），操作左右两端对齐 */
+.ai-chat-bubble.has-actions {
+  width: 370px;
+}
+
+/* 用户消息：右对齐、5% 黑底、14/1.6、内距 12×10 */
+.ai-chat-bubble.is-user {
+  align-self: flex-end;
+  max-width: 324px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.05);
+  font-size: 14px;
+  transform-origin: 100% 100%;
+}
+
+.ai-chat-text {
+  margin: 0;
+}
+
+/* ---------- 回答里的极简 Markdown ----------
+   小标题比正文重、列表有序/无序分开，长回答才有层次 */
+.ai-chat-md-h {
+  margin: 14px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #000;
+}
+
+.ai-chat-md-h:first-child {
+  margin-top: 0;
+}
+
+.ai-chat-md-p {
+  margin: 0 0 7px;
+  font-size: 15px;
+  line-height: 1.72;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+.ai-chat-md-p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-chat-md-ol,
+.ai-chat-md-ul {
+  margin: 0 0 7px;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.72;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+.ai-chat-md-ol {
+  list-style: decimal;
+}
+
+.ai-chat-md-ul {
+  list-style: disc;
+}
+
+.ai-chat-md-ol li,
+.ai-chat-md-ul li {
+  margin: 0 0 6px;
+  padding-left: 2px;
+}
+
+.ai-chat-md-ol li:last-child,
+.ai-chat-md-ul li:last-child {
+  margin-bottom: 0;
+}
+
+.ai-chat-md-ol li::marker,
+.ai-chat-md-ul li::marker {
+  color: rgba(0, 0, 0, 0.32);
+}
+
+.ai-chat-md-ol li strong,
+.ai-chat-md-ul li strong,
+.ai-chat-md-p strong {
+  font-weight: 600;
+  color: #000;
+}
+
+.ai-chat-md-p code,
+.ai-chat-md-ol li code,
+.ai-chat-md-ul li code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(0, 0, 0, 0.78);
+}
+
+/* 回答里的来源：小图 + 标题 + 出处，只做核对，不抢正文 */
+.ai-chat-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid rgba(0, 0, 0, 0.08);
+}
+
+.ai-chat-sources-label {
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.ai-chat-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 可点的来源笔记：整条是一个按钮，右侧一个箭头提示能进去 */
+button.ai-chat-source {
+  width: 100%;
+  padding: 6px 8px 6px 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.ai-chat-source:active {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 右侧箭头 = 项目里返回箭头（icon-chevron-left）的镜像，不另找图标。
+   选择器要压过 .ai-chat-source img 的 56×56 缩略图规则 */
+.ai-chat-source .ai-chat-chevron,
+.ai-chat-link .ai-chat-chevron {
+  display: block;
+  flex-shrink: 0;
+  width: 6px;
+  height: 12px;
+  margin-left: auto;
+  opacity: 0.28;
+  transform: scaleX(-1);
+}
+
+.ai-chat-source .ai-chat-chevron {
+  margin-left: 6px;
+}
+
+.ai-chat-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  color: #000;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-chat-link:active {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.ai-chat-link .ai-chat-chevron {
+  width: 7px;
+  height: 14px;
+  opacity: 0.32;
+}
+
+.ai-chat-source img,
+.ai-chat-source-tile {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f0f0f0;
+}
+
+.ai-chat-source-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.ai-chat-source-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-chat-source-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 16px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.ai-chat-source-meta {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.35);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 消息底部操作：32 方块 / 8 圆角 / 5% 黑底，左三右二 */
+.ai-chat-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.ai-chat-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-chat-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+}
+
+.ai-chat-action img {
+  width: 20px;
+  height: 20px;
+}
+
+/* 建议问：5% 黑底、32 圆角、12×10 内距，14/1.6 */
+.ai-chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 324px;
+  /* 与上一气泡的间距按 15 算（列表本身 12） */
+  margin-top: 3px;
+}
+
+.ai-chat-chip {
+  max-width: 100%;
+  padding: 10px 12px;
+  border-radius: 32px;
+  background: rgba(0, 0, 0, 0.05);
+  font-size: 14px;
+  line-height: 1.6;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 0.15s ease-out;
+}
+
+.ai-chat-chip:active {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+/* ---------- 底部输入区 ---------- */
+
+.ai-chat-composer-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 16px;
+  flex-shrink: 0;
+}
+
+.ai-chat-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+}
+
+.ai-chat-composer-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-chat-composer-main > img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.ai-chat-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0.75px;
+  color: #000;
+  /* 画布整体禁用了文本选中，输入框要单独放开 */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ai-chat-input::placeholder {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.ai-chat-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-left: 8px;
+  flex-shrink: 0;
+}
+
+.ai-chat-composer-actions img {
+  width: 24px;
+  height: 24px;
+}
+
+.ai-chat-disclaimer {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat-chip { transition: none; }
+}

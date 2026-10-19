@@ -1,0 +1,14 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="44" height="40" viewBox="0 0 44 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Search Button">
+<path id="Background" d="M0 0.5C0 0.223857 0.223858 0 0.5 0H43.5C43.7761 0 44 0.223858 44 0.5V39.5C44 39.7761 43.7761 40 43.5 40H0.5C0.223857 40 0 39.7761 0 39.5V0.5Z" fill="url(#paint0_linear_42_2864)"/>
+<g id="Icon">
+<path id="Rectangle 2" d="M27 18L22.3536 22.6464C22.1583 22.8417 21.8417 22.8417 21.6464 22.6464L17 18" stroke="black" stroke-opacity="0.46" stroke-linecap="round"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_42_2864" x1="0" y1="20" x2="44" y2="20" gradientUnits="userSpaceOnUse">
+<stop stop-color="white" stop-opacity="0"/>
+<stop offset="0.201923" stop-color="white"/>
+</linearGradient>
+</defs>
+</svg>

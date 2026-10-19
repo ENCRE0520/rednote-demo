@@ -1,0 +1,2499 @@
+:root {
+  font-family: 'PingFang SC', 'DM Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #242326;
+  background: #f1f1f0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 400;
+  /* 外框（含 6px 黑色边框） */
+  --frame-w: 414px;
+  --frame-h: 886px;
+  /* 内屏 = 设计稿尺寸 */
+  --phone-w: 402px;
+  --phone-h: 874px;
+  --phone-scale: 1;
+  --stage-gutter: 24px;
+  --stage-safe: 200px;
+  --radius-outer: 80px;
+  --radius-inner: 74px;
+  --ink-45: rgba(0, 0, 0, 0.45);
+  --ink-60: rgba(0, 0, 0, 0.6);
+  --ink-90: rgba(0, 0, 0, 0.9);
+  --red: #ff0036;
+  --line: #eaeaea;
+}
+
+* { box-sizing: border-box; }
+
+/* 页面本身永不滚动：滚轮/拖拽只作用于手机画布内的滚动区，画布固定在屏幕中心。
+   overflow 必须同时写在 html（根元素）上——只有根元素的 overflow 会被所有浏览器
+   一致地传播到视口；只写 body 在部分 WebKit 环境下不生效，空白处滑动会带动整个页面。
+   overscroll-behavior 同理：body 上的值不会传播到视口，必须写在 html 上。 */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  background: #f1f1f0;
+}
+
+/* 原生光标整体隐藏，由 .custom-cursor 接管（见 main.jsx CustomCursor）。
+   !important + .stage 通配：按钮 / 拖拽区等自带 cursor 的规则一律不得让原生光标复现
+   （否则悬浮可点击元素时，绿色圆点旁会同时冒出系统指针）。 */
+html, body, .stage, .stage * { cursor: none !important; }
+
+/* ---------- 自定义鼠标光标 ---------- */
+.custom-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  width: 14px;
+  height: 14px;
+  /* 负 margin 让圆点中心对齐指针；scale 绕自身中心放大 */
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: #111111;
+  pointer-events: none;
+  will-change: transform;
+}
+
+button {
+  color: inherit;
+  font: inherit;
+  touch-action: manipulation;
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: inherit;
+}
+
+/* 舞台固定铺满视口：即使外层容器出现意外滚动，手机画布也始终钉在视口中心不动 */
+.stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  padding: var(--stage-safe) var(--stage-gutter);
+  place-items: center;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+.phone-slot {
+  width: calc(var(--frame-w) * var(--phone-scale));
+  height: calc(var(--frame-h) * var(--phone-scale));
+  flex: 0 0 auto;
+}
+
+.phone-screen {
+  width: var(--frame-w);
+  height: var(--frame-h);
+  transform: scale(var(--phone-scale));
+  transform-origin: top left;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 6px;
+  border-radius: var(--radius-outer);
+  corner-shape: superellipse(1.5);
+  background: #090a0a;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 20%), 0 3px 7px rgb(20 23 24 / 11%), 0 22px 45px -22px rgb(27 31 33 / 30%), 0 50px 90px -46px rgb(27 31 33 / 35%);
+  isolation: isolate;
+}
+
+.phone-ui {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-inner);
+  corner-shape: superellipse(1.5);
+  background: #fafafa;
+  /* 画布内所有内容禁止选中（鼠标长按/拖拽均不会产生选区） */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 画布内图片禁止原生拖拽 */
+.phone-ui img { -webkit-user-drag: none; }
+
+/* ---------- 状态栏 ---------- */
+
+/* 状态栏：全局唯一，始终位于最上层（z50，高于话题页 35 / 详情页 38 / 飞行层 36-37），
+   展开/收起/话题页全程可见；自身背景保持透明，底色由各页面（首页/话题页/详情页）各自提供，
+   避免页面进出横滑时状态栏因背景色渐变产生色块遮挡 */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 50;
+  width: 100%;
+  height: 62px;
+  padding: 2.333px 9px 0;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+/* 首页状态栏白色底色：位于状态栏下方（z5），低于话题页（z35），
+   话题页进入/退出横滑时能自然覆盖或露出，状态栏本身不遮挡页面 */
+.home-status-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 62px;
+  background: #fff;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* 页面自带的等高占位：保证各自头部内容仍从 y=62 开始 */
+.topic-status-space,
+.post-status-space {
+  height: 62px;
+  flex-shrink: 0;
+}
+
+/* 设计稿规格（Status bar - iPhone 17 Pro，402×62）：
+   时间区/图标区 flex:1 0 0，pt 2.333 + px 9；时间 17px/590/lh22 居中于左区；
+   灵动岛 125×37 r100；图标区内容 justify-center（不是贴右缘），
+   min-width:1px 与设计一致（避免 min-content 下限把灵动岛挤位移）。 */
+.status-time {
+  display: flex;
+  flex: 1 0 0;
+  align-items: center;
+  justify-content: center;
+  height: 13px;
+  padding-right: 6px;
+  min-width: 1px;
+  font-family: 'SF Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 17px;
+  font-weight: 590;
+  line-height: 22px;
+  color: #000;
+}
+
+.dynamic-island {
+  flex-shrink: 0;
+  width: 125px;
+  height: 37px;
+  border-radius: 100px;
+  background: #000;
+}
+
+.status-levels {
+  display: flex;
+  flex: 1 0 0;
+  align-items: center;
+  justify-content: center;
+  height: 13px;
+  padding-right: 1px;
+  min-width: 1px;
+}
+
+.status-levels img { height: 13px; }
+
+/* ---------- 首页顶部导航 ---------- */
+
+/* 顶部 Tab：固定层，不参与分页平移 */
+.top-tab-slot {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.home-tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  border-bottom: 0.3px solid var(--line);
+}
+
+.home-tab-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+
+.home-tab-icon img { width: 100%; height: 100%; }
+
+.home-tab-list {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-size: 16px;
+}
+
+.home-tab {
+  position: relative;
+  font-weight: 400;
+  color: var(--ink-45);
+}
+
+.home-tab.is-active {
+  font-weight: 500;
+  color: #000;
+}
+
+/* 指示条：常驻，位置由 JS 按 active 计算的 x 驱动（margin-left 抵消自身宽度的一半） */
+.home-tab-indicator {
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  margin-left: -14px;
+  width: 28px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--red);
+  pointer-events: none;
+}
+
+.discover-tab-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.discover-tabs {
+  display: flex;
+  flex: 1 0 0;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+}
+
+.discover-tab {
+  flex-shrink: 0;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+.discover-tab.is-active {
+  font-weight: 500;
+  color: #000;
+}
+
+.discover-search {
+  position: absolute;
+  top: 0;
+  left: 358px;
+  width: 44px;
+  height: 40px;
+}
+
+.discover-search img { width: 100%; height: 100%; }
+
+.sub-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 6px;
+}
+
+.sub-tab {
+  position: relative;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--ink-45);
+}
+
+.sub-tab.is-active {
+  font-weight: 500;
+  color: #000;
+}
+
+/* 关注的人头像行 */
+
+.following-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+  padding: 14px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: none;
+  touch-action: pan-x;
+}
+
+.following-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* 红点 badge 的定位基准：头像 44px 在 64px 容器里水平居中（左边距 10px），
+   badge 落在头像右上角，因此 left = 10 + 35 */
+.profile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+  width: 64px;
+}
+
+.profile-avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 99px;
+  font-size: 17px;
+  background: #7ea4c5;
+}
+
+.profile-badge {
+  position: absolute;
+  top: 1px;
+  left: 45px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: var(--red);
+}
+
+.profile-name {
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关注的话题条 */
+
+.topics-strip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 12px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: none;
+  touch-action: pan-x;
+}
+
+.topics-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.topic {
+  display: flex;
+  flex-direction: column;
+  /* 入口小卡里的文字整体靠左，不居中 */
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  /* 原设计稿 60×60（Topic label 位于 (4,28) 52×24 → 上下 8px、左右 4px），
+     现在放到 64×64：左右 padding 收到 1px，让 Blender 这类 Latin 名在
+     24px 括号下也能保持 12px 正文、不用缩字号。
+     「Blender / 实战」两行时整行需 40.19px（名字 29.35 + 括号 2×5.42），
+     2px padding 只剩 39.34px 会溢出 0.85px，故收到 1px（可用 41.34px）。 */
+  padding: 8px 1px;
+  border-radius: 6px;
+}
+
+/* 未读不展示：卡片上不加红点或角标，话题条只呈现设计稿里的 Topic */
+
+.topic-label {
+  display: flex;
+  align-items: center;
+  color: rgba(0, 0, 0, 0.9);
+  line-height: 1;
+}
+
+/* Latin 名（Blender）一行比中文名宽（12px 下约 44px）：
+   64×64 下按内容自适应，字号不缩小，两行都换行不截断 */
+.topic-name.is-long { max-width: 46px; }
+
+.topic-name.is-long span { white-space: nowrap; }
+
+/* 占位 chip：不可点击，不做任何交互反馈 */
+.topic.is-static { pointer-events: none; }
+
+.topic-brace {
+  font-size: 24px;
+  font-weight: 300;
+  white-space: nowrap;
+}
+
+.topic-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* 名字栏按文字宽度自适应（上限仍按设计稿的 36px / 3 字），
+     这样两侧的括号会贴着文字放，两字名右边不会空出一块 */
+  width: auto;
+  max-width: 36px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.topic-name span { white-space: nowrap; }
+
+/* ---------- 信息流 ---------- */
+
+.page-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: #fafafa;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* 滚轮滚动限制在滚动区内，不链到页面，不触发任何视口弹性回弹 */
+  overscroll-behavior: none;
+}
+
+.page-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.feed-flow {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+  padding: 5px;
+}
+
+.feed-column {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.follow-empty {
+  padding: 48px 32px;
+  color: #999;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.post-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #fff;
+  will-change: transform;
+}
+
+.post-image {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background: #b0bcc7;
+  will-change: transform;
+}
+
+.post-image img,
+.post-image-placeholder {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.post-image-placeholder { background: #b0bcc7; }
+
+.post-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px;
+  opacity: 1;
+  /* 与飞行文字层 INFO_IN 同值：收起末段淡入复位（飞行期间被外壳盖住，仅作交接兜底） */
+  transition: opacity 240ms linear 160ms;
+}
+
+/* 展开时信息区先淡出，收起末段再淡入复位（与 INFO_OUT 同值） */
+.post-info.is-dimmed {
+  opacity: 0;
+  transition: opacity 300ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post-info,
+  .post-info.is-dimmed { transition-duration: 0ms; transition-delay: 0ms; }
+}
+
+.post-title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #000;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.post-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.post-user {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+/* 用户名 + 发帖日期纵向堆叠（关注的人信息流）：与名字间距 0 */
+.post-user-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* 头像：真实头像 / 作者渐变底 / 评论纯色底 + 首字 */
+.post-avatar,
+.post-author-avatar,
+.comment-avatar,
+.profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.18);
+  user-select: none;
+}
+
+/* 真实头像：铺满圆形容器；无头像时沿用首字方案 */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.post-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  font-size: 9px;
+  background: #000;
+}
+
+.post-username {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 发帖日期（MM-DD，如 10-16）：10px / 60% 黑 / 与上方名字间距 0 */
+.post-date {
+  font-size: 10px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+/* 来源话题（关注的话题信息流）：名字下方一行「来自 ××」，与日期同一层级 */
+.post-topic {
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.6);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-like {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000;
+}
+
+.post-like img {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- 底部导航 ---------- */
+
+.bottom-nav {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.bottom-nav-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 20px;
+}
+
+.bottom-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 44px;
+  padding: 10px 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink-45);
+}
+
+.bottom-tab.is-active {
+  font-size: 17px;
+  color: #000;
+}
+
+.bottom-plus {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 44px;
+  padding: 5px 0;
+}
+
+.bottom-plus img {
+  width: 46px;
+  height: 34px;
+}
+
+.home-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+}
+
+/* 全局 home indicator：常驻在页面上方、状态栏下方，不参与变暗 */
+.global-home-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  pointer-events: none;
+}
+
+.home-indicator span {
+  width: 134px;
+  height: 5px;
+  border-radius: 100px;
+  background: #000;
+}
+
+/* ---------- 动效：Tab 分页 ---------- */
+
+.pager {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.pager-track {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+}
+
+.pager-track.is-draggable { touch-action: pan-y; }
+
+.pane {
+  display: flex;
+  flex: 0 0 402px;
+  flex-direction: column;
+  width: 402px;
+  height: 100%;
+  background: #fff;
+}
+
+.pane-top {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+/* 次级 Tab 分页：关注的人 / 关注的话题 */
+.sub-pager {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.sub-pager-track {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+}
+
+.sub-pane {
+  display: flex;
+  flex: 0 0 402px;
+  flex-direction: column;
+  width: 402px;
+  height: 100%;
+  background: #fff;
+}
+
+/* ---------- 话题页 + 每日要闻 ---------- */
+
+.topic-page {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  will-change: opacity, transform;
+}
+
+/* 头部渐变底色：颜色由 JS 按话题的 from/to 注入（与入口卡片一致），此处只负责铺满与层级 */
+.topic-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* 话题页内不再渲染状态栏（全局统一提供），此处仅占位说明 */
+
+/* 压暗层：包含导航/头部/要闻/sheet，status bar 不参与 */
+.topic-dimmable { will-change: opacity; }
+
+.topic-nav {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  flex-shrink: 0;
+  padding: 0 16px;
+}
+
+/* 导航栏左侧一组：返回键 + 社区名（标题紧贴返回键右侧，靠左对齐），
+   由 JS 按 sheet 位移控制透明度——只在 sheet 顶到顶部、头部被盖住时出现 */
+.topic-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.topic-nav-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+  color: #000;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 导航栏右侧只保留点点图标；关注按钮已移入大标题行 */
+.topic-nav-actions {
+  display: flex;
+  align-items: center;
+}
+
+/* 话题页右上角的点点入口：沿用首页顶部导航左上角的 24px 线性图标，
+   只留图标、不带文字；44px 命中区，图标右缘与 16px 页边距对齐 */
+.topic-ai {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.topic-ai img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.topic-ai:active {
+  opacity: 0.55;
+}
+
+/* 头部高于后层内容：滚动时卡片从标题下方穿过；整层不拦截滚动，
+   只有可见的按钮由 JS 恢复命中 */
+.topic-head {
+  position: relative;
+  z-index: 2;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+/* 大标题行：左侧 {话题名}，右侧关注按钮（设计稿 63:3831） */
+.topic-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #000;
+}
+
+.topic-hero-title {
+  display: flex;
+  align-items: center;
+}
+
+.topic-hero-brace {
+  font-size: 48px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.topic-hero-name {
+  display: flex;
+  flex-direction: column;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+/* 关注按钮移进大标题行：实底红 pill（px12 / py6 / r8 / 14px Medium） */
+.topic-follow {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--red);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #fff;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+/* 已关注：降为中性灰底，避免和「关注」抢注意力 */
+.topic-follow.is-followed {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.topic-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.topic-desc-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.topic-desc-text.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.topic-desc-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  line-height: 18px;
+  color: #000;
+}
+
+.topic-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #01376b;
+}
+
+/* 后层内容层：常驻在 sheet 之下，裁切线固定在导航栏下沿（118），
+   滚动内容可以一直升到导航栏；顶部留白由 JS 随 sheet 位置收放
+   （收起 190px → 首卡落在默认态 y=308；展开 72px → 设计稿展开态 y=190）。
+   高度由 JS 按 sheet 位置绑定，因此不设 bottom。
+   这里显式清掉底色（.page-scroll 默认是 #fafafa），让社区渐变透到列表背后。 */
+.topic-news {
+  position: absolute;
+  top: 118px;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  padding: 72px 16px 8px;
+  background: transparent;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.topic-news::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* ---------- 后层内容卡：半透明白（让话题渐变透上来）/ r8 / p12，节与节间距 12 ---------- */
+.topic-back-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-back-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.topic-back-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topic-back-title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.topic-back-desc {
+  margin: -2px 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-45);
+  text-wrap: pretty;
+}
+
+/* 事件背景：整段简介文字（13px / 60% 黑） */
+.topic-event-bg {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+/* 事件时间线：月（12px）+ 日（24px）作组头，下面按日列出进展 */
+.topic-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-timeline-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-timeline-date {
+  display: flex;
+  flex-direction: column;
+  padding-right: 4px;
+  color: #000;
+}
+
+.topic-timeline-month {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.topic-timeline-day {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.topic-timeline-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 热门内容 / 每日要闻的条目列表 */
+.topic-hot-list,
+.topic-news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- 在线 iconfont（project 5198522，仅供原型调试；正式发布请下载字体包自托管） ---------- */
+@font-face {
+  font-family: 'iconfont';
+  src: url('//at.alicdn.com/t/c/font_5198522_teu784wutyq.woff2?t=1782231184678') format('woff2'),
+    url('//at.alicdn.com/t/c/font_5198522_teu784wutyq.woff?t=1782231184678') format('woff'),
+    url('//at.alicdn.com/t/c/font_5198522_teu784wutyq.ttf?t=1782231184678') format('truetype');
+}
+
+.iconfont {
+  font-family: 'iconfont' !important;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 知识库：3 列图标卡，图标与标签共用卡片底色，标签紧跟图标 */
+.topic-knowledge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.topic-knowledge-tile {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  align-items: center;
+  min-width: 84px;
+  padding: 12px 0 10px;
+  gap: 2px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.topic-knowledge-tile:active {
+  opacity: 0.92;
+}
+
+.topic-knowledge-icon {
+  flex: 0 0 auto;
+  font-size: 22px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.topic-knowledge-label {
+  display: block;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 设计趋势：2 列图卡网格（图 4:3 + 趋势名 + 一句话），点击直达代表笔记 */
+.topic-trend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.topic-trend-tile {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 风格卡不响应悬停，只保留按下时的整体压感 */
+.topic-trend-tile:active {
+  opacity: 0.92;
+}
+
+.topic-trend-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #f1f1f1;
+}
+
+.topic-trend-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.topic-trend-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.topic-trend-name {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #000;
+}
+
+.topic-trend-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.6);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 场景没有可核实素材时的简短空状态：模块、位置与字号照旧，只是不给内容 */
+.topic-news-empty {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.topic-empty {
+  margin: 0;
+  padding: 24px 16px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.topic-news-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-news-datehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  padding-right: 4px;
+  font-size: 14px;
+  line-height: 20px;
+  color: #000;
+}
+
+.topic-news-item {
+  position: relative;
+  display: flex;
+  /* button 默认按内容撑宽（fit-content），长标题会把卡片顶出屏幕 →
+     显式锁成容器宽度，保证左右始终留出 24px 安全边距 */
+  width: 100%;
+  max-width: 100%;
+  align-items: stretch;
+  min-height: 69px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* 触屏反馈：只保留按压，不做悬停变色 */
+.topic-news-item:active {
+  opacity: 0.92;
+}
+
+.topic-news-thumb {
+  flex-shrink: 0;
+  width: 96px;
+  overflow: hidden;
+  background: #f1f1f1;
+}
+
+/* 有真实配图时铺满图槽（图片来自该条动态对应的帖子，无图则保留灰底占位） */
+.topic-news-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.topic-news-thumb.thumb-1 { background: #dcdcdc; }
+.topic-news-thumb.thumb-2 { background: #f0f0f0; }
+
+.topic-news-content {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.topic-news-itemtitle {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-news-itemdesc {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.6);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 热门内容底部作者栏：规格沿用首页卡片（18px 头像 / 12px 名字与赞数 / 16px 心形）。
+   贴底显示，让不同图高的条目底部对齐。 */
+.topic-news-meta {
+  margin-top: auto;
+  padding-top: 4px;
+  gap: 8px;
+}
+
+.topic-news-meta .post-user,
+.topic-news-meta .post-username {
+  min-width: 0;
+}
+
+.topic-news-meta .post-like {
+  flex-shrink: 0;
+}
+
+/* 笔记 sheet：可整体下拖，露出后层内容 */
+.topic-sheet {
+  position: absolute;
+  top: 350px;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  height: 524px;
+  border-radius: 12px 12px 0 0;
+  background: #fff;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06);
+  will-change: transform;
+}
+
+/* sheet 是 flex 容器：把手/工具栏必须锁定高度，否则会被可滚动内容的
+   flex-basis 挤压缩扁（曾出现 handle 14→6px、toolbar 28→23px）。
+   设计稿（39:2563 Toolbar）：py6 / pl20 / pr16 / gap6；divider 28×2 #d9d9d9 r1；
+   行 = 笔记 16px(Medium) + 搜索图标 20px，行高约 22.4；整块高 42.4。
+   把手 14px = 6px 上边距 + 2px divider + 6px 与下行的间距 */
+.topic-sheet-handle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: 14px;
+  flex-shrink: 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.topic-sheet-handle::after {
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+  background: #d9d9d9;
+  content: '';
+}
+
+/* 行区：左右内边距按设计稿 pl20/pr16；底部 6px 留白后接 0.3px 底线 */
+.topic-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0 16px 6px 20px;
+  border-bottom: 0.3px solid rgba(0, 0, 0, 0.15);
+  cursor: grab;
+  touch-action: none;
+}
+
+.topic-sheet-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #000;
+}
+
+.topic-sheet-search {
+  width: 20px;
+  height: 20px;
+}
+
+/* sheet 内分类 Tab 行（设计稿 63:3837）：白底、左右 6px、间距 8px、
+   选中黑色 Medium、未选中 rgba(0,0,0,0.45)；右侧图标带白色渐隐罩 */
+.topic-tabs {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  /* 分类多时可横向滑动（渐隐罩提示右侧还有内容） */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0 6px;
+  background: #fff;
+}
+
+.topic-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.topic-tab {
+  flex-shrink: 0;
+  padding: 10px;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
+  white-space: nowrap;
+  transition: color 0.16s ease;
+}
+
+.topic-tab.is-active {
+  color: #000;
+  font-weight: 500;
+}
+
+.topic-tabs-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 55%);
+  pointer-events: none;
+}
+
+.topic-tabs-fade img {
+  width: 20px;
+  height: 20px;
+}
+
+.topic-tabs-fade .topic-tabs-chevron {
+  width: 44px;
+  height: 40px;
+}
+
+.topic-sheet-scroll {
+  min-height: 0;
+}
+
+/* ---------- 没有专题索引或事件内容时的直接布局 ---------- */
+.topic-direct-scroll {
+  position: absolute;
+  top: 118px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.topic-direct-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.topic-head-direct {
+  padding-bottom: 16px;
+}
+
+/* 社区内容卡片容器 */
+.topic-content-body {
+  border-radius: 16px 16px 0 0;
+  background: #fff;
+  min-height: 480px;
+  padding: 6px 0 40px;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.04);
+}
+
+/* 轻量筛选行：按设计稿 Tab Container —— 白底、左右 6px、间距 8px、
+   选中态黑色 Medium 500 且不带下划线，未选中 rgba(0,0,0,0.45) Regular 400 */
+.topic-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  background: #fff;
+  /* 分类增多时可横向滑动，右侧留出与设计稿一致的余量 */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topic-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.topic-filter-btn {
+  flex-shrink: 0;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
+  white-space: nowrap;
+  transition: color 0.16s ease;
+}
+
+.topic-filter-btn.is-active {
+  color: #000;
+  font-weight: 500;
+}
+
+.topic-feed-wrap {
+  padding-top: 4px;
+}
+
+/* 空状态卡片 */
+.topic-empty-card {
+  padding: 48px 24px 32px;
+  text-align: center;
+}
+
+.topic-empty-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.topic-empty-desc {
+  margin: 0 auto;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* 话题入口卡片（原 div 改为 button 的重置）——不要清 padding，
+   否则会覆盖 .topic 的设计稿内边距（8px 4px），文字会贴到底边 */
+button.topic {
+  border: 0;
+  font: inherit;
+  text-align: inherit;
+}
+
+/* ---------- 动效：帖子展开 / 返回 ---------- */
+
+/* 落地页 */
+.post-page {
+  position: absolute;
+  inset: 0;
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  will-change: opacity;
+}
+
+/* 双图层 FLIP：外壳（白底卡片 → 全屏） */
+.flight-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 45;
+  width: 402px;
+  height: 874px;
+  background: #fff;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 双图层 FLIP：图片（卡片图 → 落地页图，纯等比缩放） */
+.flight-picture {
+  position: absolute;
+  left: 0;
+  z-index: 46;
+  width: 402px;
+  background-color: #b0bcc7;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.flight-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 三图层 FLIP：卡片文字层（与图片层同 z-index，但 DOM 更后 → 画在图片之上）
+   位置与尺寸 = 卡片文字区实测矩形；展开时与图片同比例放大后再淡出，收起时反向 */
+.flight-info {
+  position: absolute;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  overflow: hidden;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ---------- 帖子详情页 ---------- */
+
+.post-top {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.post-scroll { background: #fff; }
+
+.post-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+}
+
+.post-author {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.post-back {
+  display: flex;
+  align-items: center;
+  width: 12px;
+  height: 24px;
+}
+
+.post-back img { width: 100%; height: 100%; }
+
+.post-author-info {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.post-author-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 99px;
+  font-size: 14px;
+  background: #d0d0d0;
+}
+
+.post-author-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #000;
+}
+
+.post-header-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.post-follow {
+  padding: 4px 18px;
+  border: 0.5px solid var(--red);
+  border-radius: 14px;
+  font-size: 13px;
+  color: var(--red);
+}
+
+.post-share {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.post-share img { width: 100%; height: 100%; }
+
+.post-picture {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background: #b0bcc7;
+  will-change: transform;
+}
+
+.post-picture-inner {
+  position: absolute;
+  inset: 0;
+}
+
+.post-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.post-info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 16px;
+}
+
+.post-heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #000;
+}
+
+.post-body {
+  font-size: 16px;
+  color: #000;
+}
+
+.post-body p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.post-tag {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #01376b;
+  white-space: nowrap;
+}
+
+/* 小组卡片 */
+
+.group-card {
+  display: flex;
+  align-items: flex-start;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  overflow: hidden;
+  border: 0.3px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+.group-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: stretch;
+  flex-shrink: 0;
+  width: 79px;
+  padding: 8px 6px;
+  background: linear-gradient(to bottom, rgba(106,185,255,0.5), rgba(253,237,207,0.5));
+}
+
+.group-badge {
+  display: flex;
+  align-items: center;
+  color: #000;
+  line-height: 1;
+}
+
+.group-brace {
+  font-size: 32px;
+  font-weight: 300;
+  white-space: nowrap;
+}
+
+.group-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 48px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.group-info {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 8px;
+}
+
+.group-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.group-title {
+  flex: 1 0 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #000;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-action {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-45);
+}
+
+.group-action img { width: 6px; height: 12px; }
+
+.group-desc {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-60);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+/* 统计行 */
+
+.stats-row {
+  padding: 0 8px 18px;
+}
+
+.stats-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 8px;
+  padding: 12px 8px;
+  border-bottom: 0.3px solid rgba(0, 0, 0, 0.15);
+}
+
+.stats-metadata {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+.stats-action {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 1px 6px 1px 2px;
+  border: 0.3px solid rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+.stats-action img {
+  width: 16px;
+  height: 16px;
+}
+
+/* 评论区 */
+
+.post-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 16px 16px;
+}
+
+.comment {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.comment.is-sub { padding-left: 48px; }
+
+.comment-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 99px;
+  font-size: 14px;
+  background: #7ea4c5;
+}
+
+.comment.is-sub .comment-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 99px;
+  font-size: 10px;
+}
+
+.comment-info {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.comment-user {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-60);
+}
+
+.comment-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.comment-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #000;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.comment-action-left {
+  display: flex;
+  flex: 1 0 0;
+  gap: 4px;
+  align-items: center;
+}
+
+.comment-metadata {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-45);
+}
+
+.comment-reply {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-60);
+}
+
+.comment-action-right {
+  display: flex;
+  gap: 0;
+  align-items: center;
+}
+
+.comment-like {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  width: 62px;
+}
+
+.comment-like img {
+  width: 22px;
+  height: 22px;
+}
+
+.comment-like span {
+  flex: 1 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-60);
+}
+
+.comment-more {
+  width: 22px;
+  height: 22px;
+}
+
+/* 帖子底部工具栏 */
+
+.post-toolbar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-top: 0.3px solid var(--line);
+  background: #fff;
+}
+
+.post-toolbar-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 8px 10px 16px;
+}
+
+.post-input {
+  display: flex;
+  flex: 1 0 0;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 18px;
+  background: #f4f4f5;
+}
+
+.post-input img {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.post-input span {
+  font-size: 14px;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+.post-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  width: 212px;
+}
+
+.post-toolbar-action {
+  display: flex;
+  flex: 1 0 0;
+  gap: 2px;
+  align-items: center;
+}
+
+.post-toolbar-action img {
+  width: 32px;
+  height: 32px;
+}
+
+.post-toolbar-action span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #000;
+  white-space: nowrap;
+}
+
+/* ---------- 关注闭环：一次性反馈浮层 ---------- */
+
+/* 贴在底部导航之上（44px 导航 + 34px home indicator = 78 → 再留 18px 间距），
+   绝对定位 + z60（高于状态栏 50），不参与任何布局，不影响画布内既有几何 */
+.follow-toast {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  left: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  will-change: opacity, transform;
+}
+
+.follow-toast-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.follow-toast-detail {
+  font-size: 11px;
+  line-height: 16px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* ---------- 新闻详情页（要闻条目点开） ---------- */
+
+.news-page {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 与首页/信息流一致的浅灰底，正文与来源卡片都是白底卡片 */
+  background: #fafafa;
+  will-change: opacity, transform;
+}
+
+.news-scroll { background: transparent; }
+
+.news-article {
+  display: flex;
+  flex-direction: column;
+  /* 顶部留 8px 安全间距；左右 5px / 圆角 4px 与下方笔记卡片对齐 */
+  margin: 8px 5px 0;
+  padding: 16px 16px 20px;
+  border-radius: 4px;
+  background: #fff;
+}
+
+/* 来源：这条要闻整理自社区里的这些笔记（瀑布卡、卡片流形态） */
+.news-sources {
+  display: flex;
+  flex-direction: column;
+  margin: 18px 0 0;
+  padding-bottom: 28px;
+}
+
+.news-sources-header {
+  padding: 0 5px;
+  margin-bottom: 8px;
+}
+
+.community-insight .news-sources-header {
+  padding-left: 16px;
+}
+
+.news-sources-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-45);
+}
+
+.news-sources-flow {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+  padding: 0 5px;
+}
+
+.news-sources-column {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.news-source-waterfall-card {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.news-source-waterfall-card:active {
+  opacity: 0.92;
+}
+
+.news-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-45);
+}
+
+.news-meta-source {
+  color: var(--ink-45);
+}
+
+/* 详情页标题与顶部导航同级（18px），层级靠字重和颜色拉开，不再靠放大字号 */
+.news-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  color: #000;
+  text-wrap: pretty;
+}
+
+.news-lead {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: rgba(0, 0, 0, 0.7);
+  text-wrap: pretty;
+}
+
+.news-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 0.5px solid #f0f0f0;
+}
+
+.news-body p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: rgba(0, 0, 0, 0.82);
+  text-wrap: pretty;
+}
+
+.news-source-link,
+.post-source-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: #8b553d;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.news-source-link { align-self: flex-start; margin-top: 8px; }
+.post-source-link { margin-top: 8px; }
+
+/* 分类图卡：没有配图时的缩略图（渐变底 + 分类词），铺满 96×69 图槽 */
+.news-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: #fff;
+}
+
+/* 分类图卡：没有配图时的缩略图（渐变底 + 分类词），铺满 96×69 图槽 */
+.news-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: #fff;
+}
+
+/* 社区整理：沿用后层白色卡片与笔记详情排版。 */
+.topic-ai-caption {
+  display: block;
+  margin: 0;
+  color: var(--ink-45);
+  font-size: 11px;
+  line-height: 1.5;
+}
+button.topic-knowledge-tile { cursor: pointer; }
+.topic-insight-row,
+.topic-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  color: var(--ink-60);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.topic-insight-row:last-child,
+.topic-evidence:last-child { border-bottom: 0; }
+.topic-insight-row strong,
+.topic-evidence-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-90);
+  font-size: 13px;
+  font-weight: 500;
+}
+.community-insight { z-index: 41; }
+.insight-scroll { padding-bottom: 52px; }
+.community-insight .news-title { font-size: 18px; line-height: 1.45; outline: none; }
+.community-insight .news-lead { font-size: 14px; line-height: 1.7; }
+.insight-related { margin-top: 22px; }
+.insight-related h2 { margin: 0 0 8px; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--ink-45); }
+.insight-related > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.insight-related button { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 44px; border-radius: 4px; background: #f5f5f5; font-size: 12px; cursor: pointer; }
+.insight-related button span { color: var(--ink-45); }
+.insight-version { display: block; margin-top: 6px; color: var(--ink-60); font-size: 13px; line-height: 1.5; }
+.insight-empty { margin: 0 5px; padding: 16px; border-radius: 4px; background: #fff; font-size: 13px; line-height: 1.7; color: var(--ink-60); }
+.community-insight button:focus-visible,
+.community-insight a:focus-visible,
+.topic-knowledge-tile:focus-visible,
+.topic-trend-tile:focus-visible,
+.topic-insight-row:focus-visible,
+.topic-evidence:focus-visible { outline: 2px solid #242326; outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
+  .insight-related button:hover { background: #f5f5f5; }
+  .insight-note:hover .insight-note-title,
+  .insight-waterfall-card:hover .post-title { text-decoration: underline; text-underline-offset: 3px; }
+  .topic-evidence:hover .topic-evidence-title { text-decoration: underline; text-underline-offset: 3px; }
+}
+
+.topic-open-questions { margin-top: 4px; padding: 12px; background: #f5f5f5; border-radius: 4px; font-size: 12px; line-height: 1.6; color: var(--ink-60); }
+.topic-open-questions strong { color: var(--ink-90); font-weight: 500; }
+.topic-open-questions p { margin: 6px 0 0; }
+
+.insight-style .news-title { margin-bottom: 8px; font-size: 18px; line-height: 1.45; }
+.insight-style .news-lead { font-size: 14px; line-height: 1.7; }
+.insight-style-copy { gap: 0; margin-top: 12px; padding-top: 12px; }
+.insight-style-copy h2 { margin: 12px 0 5px; font-size: 13.5px; font-weight: 600; line-height: 1.5; color: var(--ink-90); }
+.insight-style-copy h2:first-child { margin-top: 0; }
+.insight-style-copy p { font-size: 13.5px; line-height: 1.72; }
+
+/* 热门风格入口：区块标题 16px（沿用原卡片），风格名 14px，说明 13px。 */
+/* 图片与文字合成一张卡片：白底包住图，图内缩一圈 */
+.topic-style-grid .topic-trend-tile { padding: 6px; border-radius: 8px; background: rgba(255, 255, 255, 0.9); }
+.topic-style-grid .topic-trend-thumb { border-radius: 4px; }
+.topic-style-grid .topic-trend-body { gap: 1px; padding: 8px 2px 2px; }
+.topic-style-grid .topic-trend-name { font-size: 14px; font-weight: 500; line-height: 1.4; text-wrap: balance; }
+.topic-style-summary { display: block; font-size: 13px; line-height: 1.45; color: #666; text-wrap: pretty; overflow-wrap: break-word; }
+
+/* Blender 知识库：先读知识关系和社区作品，再按类型进入真实笔记。 */
+.topic-blender-knowledge .topic-knowledge-label { font-size: 14px; line-height: 1.4; }
+.insight-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.insight-knowledge-icon { flex-shrink: 0; display: block; font-size: 20px; line-height: 1; color: var(--ink-90); }
+.community-insight .insight-detail-head { padding-top: 18px; }
+.community-insight .insight-detail-head .news-title { margin-bottom: 8px; font-size: 18px; font-weight: 600; line-height: 1.45; }
+/* 知识页标题与顶部「Blender 知识库」同级：图标在左、标题在右，字号不超过 18px */
+.community-insight .insight-detail-head .insight-title-row .news-title { min-width: 0; margin: 0; font-size: 18px; line-height: 26px; }
+.community-insight .insight-detail-head .news-lead { font-size: 14px; line-height: 1.7; color: #555; text-wrap: pretty; }
+.insight-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.insight-badges > span { font-size: 12px; line-height: 1.4; color: var(--ink-45); }
+.insight-badges .insight-badge { padding: 2px 7px; border-radius: 3px; background: #f5f5f5; color: var(--ink-60); }
+
+.insight-section {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 5px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: #fff;
+}
+.insight-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.insight-section-head h2 { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--ink-45); }
+
+/* 教程与经验：白卡外壳去掉，标题与瀑布流直接落在页面底色上。 */
+.insight-tutorials { display: flex; flex-direction: column; margin: 16px 5px 0; }
+.insight-tutorials .insight-section-head { margin: 0 0 8px; }
+
+/* 瀑布流卡片沿用信息流的「图 + 标题 + 作者」。 */
+.insight-waterfall { display: flex; align-items: flex-start; gap: 5px; }
+.insight-waterfall-column { display: flex; flex: 1 0 0; flex-direction: column; gap: 5px; min-width: 0; }
+.insight-waterfall.is-single .insight-waterfall-column { flex: 0 0 50%; }
+.insight-waterfall-card { width: 100%; text-align: left; cursor: pointer; }
+.insight-waterfall-card:active { opacity: 0.92; }
+.insight-waterfall-cond { display: block; font-size: 11px; line-height: 1.4; color: var(--ink-45); }
+
+/* 社区作品：沿用「热门内容」的横向卡片，图上左、文字在右，底部只留作者 */
+.insight-note-list { display: flex; flex-direction: column; gap: 8px; }
+.insight-note {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 88px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f7f7f7;
+  text-align: left;
+  cursor: pointer;
+}
+.insight-note:active { opacity: 0.92; }
+.insight-note-thumb { position: relative; flex-shrink: 0; width: 96px; overflow: hidden; background: #f1f1f1; }
+.insight-note-thumb img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.insight-note-copy { display: flex; flex: 1 0 0; flex-direction: column; gap: 2px; min-width: 0; padding: 8px; }
+.insight-note-title { display: block; overflow: hidden; font-size: 13px; font-weight: 500; line-height: 1.4; color: var(--ink-90); text-overflow: ellipsis; white-space: nowrap; }
+.insight-note-desc { display: -webkit-box; overflow: hidden; font-size: 12px; font-weight: 300; line-height: 1.4; color: var(--ink-60); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.insight-note-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: auto; padding-top: 4px; }
+.insight-note-meta .post-user,
+.insight-note-meta .post-username { min-width: 0; }
+.insight-note-cond { flex-shrink: 0; max-width: 58%; overflow: hidden; padding: 2px 6px; border-radius: 3px; background: #ececec; font-size: 11px; line-height: 1.5; color: var(--ink-60); text-overflow: ellipsis; white-space: nowrap; }
+.insight-note.is-compact { min-height: 60px; }
+.insight-note.is-compact .insight-note-thumb { flex-basis: 64px; width: 64px; }
+.insight-note.is-compact .insight-note-cond { display: none; }
+
+/* 学习路径：编号和竖线只负责顺序，每一步对应一篇社区笔记。 */
+.topic-insight-row {
+  gap: 4px;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+.topic-insight-row:active { opacity: 0.92; }
+.topic-insight-row strong { font-size: 14px; }
+.topic-insight-arrow { display: block; flex: 0 0 auto; width: 6px; height: 12px; }
+.community-insight .news-article { border-radius: 8px; }
+.insight-stage-list { list-style: none; margin: 0; padding: 0; }
+.insight-stage { position: relative; padding: 0 0 18px 34px; }
+.insight-stage:last-child { padding-bottom: 0; }
+.insight-stage::before { content: ''; position: absolute; left: 11px; top: 28px; bottom: 0; width: 1px; background: rgba(0, 0, 0, 0.08); }
+.insight-stage:last-child::before { display: none; }
+.insight-stage-num { position: absolute; left: 0; top: 0; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #f5f5f5; font-size: 12px; line-height: 1; color: var(--ink-60); }
+.insight-stage-body h3 { margin: 2px 0 5px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink-90); }
+.insight-stage-body > p { margin: 0; font-size: 13.5px; line-height: 1.72; color: var(--ink-60); text-wrap: pretty; }
+.insight-stage .insight-note-list { margin-top: 8px; }
+.insight-outcome { margin: 0 0 10px; font-size: 13px; line-height: 1.7; color: var(--ink-60); text-wrap: pretty; }
+
+/* 配色俱乐部沿用后层卡片，色板同时作用于应用预览。 */
+.color-club { display: flex; flex-direction: column; gap: 14px; }
+.color-preview-heading { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.5; color: var(--ink-60); }
+.color-demo { overflow: hidden; padding: 16px; border-radius: 6px; background: var(--palette-bg); color: var(--palette-ink); }
+.color-demo-top { display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; line-height: 1.5; }
+.color-demo-main { display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; gap: 12px; margin-top: 22px; }
+.color-demo-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.color-demo-copy strong { font-size: 26px; font-weight: 500; line-height: 1.2; }
+.color-demo-copy > span { font-size: 13px; line-height: 1.5; }
+.color-demo-pill { padding: 6px 12px; border-radius: 99px; background: var(--palette-primary); }
+.color-demo-art { position: relative; height: 142px; }
+.color-demo-art i { position: absolute; display: block; width: 92px; height: 92px; border-radius: 50%; }
+.color-demo-art i:nth-child(1) { top: 0; right: 0; background: var(--palette-secondary); }
+.color-demo-art i:nth-child(2) { top: 50px; left: 0; background: var(--palette-primary); }
+.color-demo-art i:nth-child(3) { top: 36px; left: 4px; width: 104px; height: 72px; border: 3px solid var(--palette-accent); transform: rotate(-32deg); }
+.color-swatches { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.color-swatches > div { display: flex; flex-direction: column; gap: 6px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.color-swatch { display: block; width: 100%; height: 42px; border-radius: 4px; outline: 1px solid oklch(0 0 0 / 0.06); outline-offset: -1px; }
+.color-actions { display: flex; align-items: center; gap: 8px; }
+.color-action { display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 8px; cursor: pointer; transition: background-color 0.18s ease, border-color 0.18s ease; }
+.color-action-random { flex: 1; padding: 6px 12px; background: oklch(0.95 0 0); font-size: 14px; font-weight: 500; line-height: 1.4; color: rgba(0, 0, 0, 0.78); }
+.color-action-copy { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.1); background: transparent; }
+.color-action-copy img { display: block; width: 24px; height: 24px; }
+.color-action-check { font-size: 21px; font-weight: 600; line-height: 1; }
+.color-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .color-action-random:hover { background: oklch(0.92 0 0); }
+  .color-action-copy:hover { background: rgba(0, 0, 0, 0.04); }
+}
+.color-action-random:active { background: oklch(0.9 0 0); }
+.color-action-copy:active { background: rgba(0, 0, 0, 0.08); }
